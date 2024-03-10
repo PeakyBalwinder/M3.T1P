@@ -1,0 +1,88 @@
+#include <iostream>
+#include <mpi.h>
+#include <CL/cl.h>
+
+#define MATRIX_SIZE 1000
+#define WORK_GROUP_SIZE 16
+
+using namespace std;
+
+// Function to perform matrix multiplication using OpenCL
+void matrixMultiplyOpenCL(int** A, int** B, int** C, int size, cl_context context, cl_command_queue command_queue, cl_program program, cl_kernel kernel) {
+    // TODO: Implement matrix multiplication using OpenCL
+}
+
+int main(int argc, char** argv) {
+    int rank, size, num_devices;
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    // Initialize OpenCL variables
+    cl_platform_id platform_id;
+    cl_device_id device_id;
+    cl_context context;
+    cl_command_queue command_queue;
+    cl_program program;
+    cl_kernel kernel;
+
+    int** A = nullptr;
+    int** B = nullptr;
+    int** C = nullptr;
+    if (rank == 0) {
+        A = new int*[MATRIX_SIZE];
+        B = new int*[MATRIX_SIZE];
+        C = new int*[MATRIX_SIZE];
+        for (int i = 0; i < MATRIX_SIZE; i++) {
+            A[i] = new int[MATRIX_SIZE];
+            B[i] = new int[MATRIX_SIZE];
+            C[i] = new int[MATRIX_SIZE];
+            for (int j = 0; j < MATRIX_SIZE; j++) {
+                A[i][j] = rand() % 10;
+                B[i][j] = rand() % 10;
+            }
+        }
+    }
+    MPI_Bcast(&MATRIX_SIZE, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Scatter matrix A to all processes
+    int** localA = new int*[MATRIX_SIZE / size];
+    MPI_Scatter(A, MATRIX_SIZE * MATRIX_SIZE / size, MPI_INT, localA[0], MATRIX_SIZE * MATRIX_SIZE / size, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Broadcast matrix B to all processes
+    MPI_Bcast(B, MATRIX_SIZE * MATRIX_SIZE, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Allocate space for local result matrix C
+    int** localC = new int*[MATRIX_SIZE / size];
+    for (int i = 0; i < MATRIX_SIZE / size; i++) {
+        localC[i] = new int[MATRIX_SIZE];
+    }
+
+    // Perform matrix multiplication using OpenCL
+    matrixMultiplyOpenCL(localA, B, localC, MATRIX_SIZE / size, context, command_queue, program, kernel);
+
+    // Gather local result matrices into global result matrix C on root process
+    MPI_Gather(localC[0], MATRIX_SIZE * MATRIX_SIZE / size, MPI_INT, C[0], MATRIX_SIZE * MATRIX_SIZE / size, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Clean up
+    if (rank == 0) {
+        for (int i = 0; i < MATRIX_SIZE; i++) {
+            delete[] A[i];
+            delete[] B[i];
+            delete[] C[i];
+        }
+        delete[] A;
+        delete[] B;
+        delete[] C;
+    }
+    for (int i = 0; i < MATRIX_SIZE / size; i++) {
+        delete[] localA[i];
+        delete[] localC[i];
+    }
+    delete[] localA;
+    delete[] localC;
+    MPI_Finalize();
+
+    return 0;
+}
