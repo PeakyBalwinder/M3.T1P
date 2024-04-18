@@ -1,23 +1,16 @@
 #include <iostream>
+#include <iomanip>
 #include <mpi.h>
+#include <ctime>
+#include <vector>
 
-#define MATRIX_SIZE 6 
+#define MATRIX_SIZE 1000 
 
 using namespace std;
 
-// Function to print a matrix
-void printMatrix(int** matrix, int size) {
-    for (int i = 0; i < size; i++) {
-        for (int j = 0; j < size; j++) {
-            cout << matrix[i][j] << " ";
-        }
-        cout << endl;
-    }
-}
-
-// Function to perform matrix multiplication
-void matrixMultiply(int** A, int** B, int** C, int size) {
-    for (int i = 0; i < size; i++) {
+// Function to perform matrix multiplication for a portion of matrices A and B
+void matrixMultiply(int** A, int** B, int** C, int startRow, int numRows, int size) {
+    for (int i = startRow; i < startRow + numRows; i++) {
         for (int j = 0; j < size; j++) {
             C[i][j] = 0;
             for (int k = 0; k < size; k++) {
@@ -29,6 +22,7 @@ void matrixMultiply(int** A, int** B, int** C, int size) {
 
 int main(int argc, char** argv) {
     int rank, size;
+    double start_time, end_time, execution_time;
 
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -44,8 +38,8 @@ int main(int argc, char** argv) {
         C[i] = new int[MATRIX_SIZE];
     }
 
-    // Initialize matrices A and B (for simplicity, we initialize them with random values)
-    srand(rank); // Seed the random number generator with the rank
+    // Initialize matrices A and B consistently across all processes
+    srand(0); // Seed the random number generator for consistency
     for (int i = 0; i < MATRIX_SIZE; i++) {
         for (int j = 0; j < MATRIX_SIZE; j++) {
             A[i][j] = rand() % 10;
@@ -53,29 +47,32 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Calculate the number of rows each process will handle
+    int rows_per_process = MATRIX_SIZE / size;
+    int startRow = rank * rows_per_process;
+
+    // Start timing
+    start_time = MPI_Wtime();
+
     // Perform matrix multiplication
-    matrixMultiply(A, B, C, MATRIX_SIZE);
+    matrixMultiply(A, B, C, startRow, rows_per_process, MATRIX_SIZE);
 
-    // Gather results from all processes to process 0
+    // End timing
+    end_time = MPI_Wtime();
+    execution_time = (end_time - start_time) * 1e9; // Convert seconds to nanoseconds
+
+    // Gather execution times from all processes onto process 0
+    vector<double> execution_times(size);
+    MPI_Gather(&execution_time, 1, MPI_DOUBLE, execution_times.data(), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    // Print the average execution time on process 0
     if (rank == 0) {
-        int** result = new int*[MATRIX_SIZE];
-        for (int i = 0; i < MATRIX_SIZE; i++) {
-            result[i] = new int[MATRIX_SIZE];
+        double total_execution_time = 0.0;
+        for (double time : execution_times) {
+            total_execution_time += time;
         }
-
-        MPI_Gather(C[0], MATRIX_SIZE * MATRIX_SIZE / size, MPI_INT, result[0], MATRIX_SIZE * MATRIX_SIZE / size, MPI_INT, 0, MPI_COMM_WORLD);
-
-        // Print the result matrix
-        cout << "Result Matrix:" << endl;
-        printMatrix(result, MATRIX_SIZE);
-
-        // Clean up
-        for (int i = 0; i < MATRIX_SIZE; i++) {
-            delete[] result[i];
-        }
-        delete[] result;
-    } else {
-        MPI_Gather(C[0], MATRIX_SIZE * MATRIX_SIZE / size, MPI_INT, NULL, 0, MPI_INT, 0, MPI_COMM_WORLD);
+        double average_execution_time = total_execution_time / size;
+        cout << fixed << setprecision(0) << "Average Execution Time: " << average_execution_time << " nanoseconds" << endl;
     }
 
     // Clean up
